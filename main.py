@@ -21,8 +21,8 @@ hospital = data[data["amenity"] == "hospital"]
 school = data[data["amenity"] == "school"]
 pharmacy = data[data["amenity"] == "pharmacy"]
 park = data[data["leisure"] == "park"]
-
 print("places seperated!")
+
 # Define categories and their weights
 category_weights = {
     "hospital": 1.0,
@@ -30,7 +30,7 @@ category_weights = {
     "school": 1.0,
     "pharmacy": 4.5
 }
-# Example data: lists of coordinates for each category
+# lists of coordinates for each category
 places = {
     "hospital": list(zip(hospital["lat"], hospital["lon"])),
     "park": list(zip(park["lat"], park["lon"])),
@@ -38,18 +38,19 @@ places = {
     "pharmacy": list(zip(pharmacy["lat"], pharmacy["lon"]))
 }
 
+# TODO: it should be loaded from center points of each region in Tehran
 reference_point = (35.70762366623293, 51.39563222475423)
 
-# Load road network (example: Manhattan)
+# Load road network in the 2Km radiused bbox of reference point
 G = ox.graph_from_point(reference_point, dist=2000, network_type='walk')
 print("Road Network loaded!")
+
+# nearest node of reference point from G as the accessible reference point
+reference_node = ox.distance.nearest_nodes(G, reference_point[1], reference_point[0])
+
 # Define walking parameters
 walking_speed_m_per_min = 80  # meters per minute
 distance_threshold = 15 * walking_speed_m_per_min  # 15-minute walk (1200 m)
-
-# Choose a reference location (for example, a given home)
-
-reference_node = ox.distance.nearest_nodes(G, reference_point[1], reference_point[0])
 
 def count_points_within_distance(G, source_node, target_coords):
     """
