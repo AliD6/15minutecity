@@ -1,29 +1,48 @@
 import osmnx as ox
 import networkx as nx
 import numpy as np
+import geopandas as gpd
+import logging
 
 
+logging.basicConfig(
+    filename="output.log",           # Output log file
+    filemode="w",                    # Overwrite file each run (use "a" to append)
+    level=logging.INFO,              # Choose detail level (DEBUG, INFO, WARNING, etc.)
+    format="%(asctime)s - %(levelname)s - %(message)s"  # Log format with timestamp
+)
+
+# load regions
+shapefile_path = "regions/mahale.shp"
+regions = gpd.read_file(shapefile_path)
+number_of_regions = len(regions)
+logging.info(f"Regions loaded: {number_of_regions} regions found.")
+
+regions["lon"] = regions.geometry.x
+regions["lat"] = regions.geometry.y
+
+# describe places and load places
 place_name = "Tehran, Iran"
 tags = {"amenity": ["hospital", "school", "pharmacy"], "leisure": "park"}
 data = ox.features_from_place(place_name, tags)
-print("POIs received!")
+logging.info("POIs received!")
 
 data["geometry_point"] = data.geometry.apply(
     lambda geom: geom if geom.geom_type == "Point" else geom.representative_point()
 )
 data["lon"] = data.geometry_point.x
 data["lat"] = data.geometry_point.y
-
 data = data.set_geometry("geometry_point")
 data = data[["geometry", "geometry_point", "amenity", "name", "leisure", "lat", "lon"]]
 
+# filter places in variables
 hospital = data[data["amenity"] == "hospital"]
 school = data[data["amenity"] == "school"]
 pharmacy = data[data["amenity"] == "pharmacy"]
 park = data[data["leisure"] == "park"]
-print("places seperated!")
+logging.info("places seperated!")
 
-# Define categories and their weights
+# define categories and their weights
 category_weights = {
     "hospital": 1.0,
     "park": 1,
@@ -37,20 +56,6 @@ places = {
     "school": list(zip(school["lat"], school["lon"])),
     "pharmacy": list(zip(pharmacy["lat"], pharmacy["lon"]))
 }
-
-# TODO: it should be loaded from center points of each region in Tehran
-reference_point = (35.70762366623293, 51.39563222475423)
-
-# Load road network in the 2Km radiused bbox of reference point
-G = ox.graph_from_point(reference_point, dist=2000, network_type='walk')
-print("Road Network loaded!")
-
-# nearest node of reference point from G as the accessible reference point
-reference_node = ox.distance.nearest_nodes(G, reference_point[1], reference_point[0])
-
-# Define walking parameters
-walking_speed_m_per_min = 80  # meters per minute
-distance_threshold = 15 * walking_speed_m_per_min  # 15-minute walk (1200 m)
 
 def count_points_within_distance(G, source_node, target_coords):
     """
@@ -71,22 +76,44 @@ def count_points_within_distance(G, source_node, target_coords):
             continue
     return count_of_places
 
-# Compute accessibility counts for each category
-accessibility_counts = {}
-for category, coords in places.items():
-    count = count_points_within_distance(G, reference_node, coords)
-    accessibility_counts[category] = count
 
-# Compute weighted accessibility score weighted by count * category weight
-weighted_score = sum(
-    category_weights[cat] * count
-    for cat, count in accessibility_counts.items()
-)
+# Define walking parameters
+walking_speed_m_per_min = 80  # meters per minute
+distance_threshold = 15 * walking_speed_m_per_min  # 15-minute walk (1200 m)
 
-# Output counts and weighted score
-print("Accessibility counts by category:")
-for cat, count in accessibility_counts.items():
-    print(f" - {cat.capitalize()}: {count} places within threshold")
+scores = []
+for idx, row in regions.iterrows():
+    reference_point = (row["lat"], row["lon"])
 
-print("\nWeighted accessibility score:", weighted_score)
+    # Load road network in the 2Km radiused bbox of reference point
+    G = ox.graph_from_point(reference_point, dist=2000, network_type='walk')
+    logging.info(f"Road Network loaded! for region: {row['NAME_MAHAL']}")
 
+    # nearest node of reference point from G as the accessible reference point
+    reference_node = ox.distance.nearest_nodes(G, reference_point[1], reference_point[0])
+
+    # Compute accessibility counts for each category
+    accessibility_counts = {}
+    for category, coords in places.items():
+        count = count_points_within_distance(G, reference_node, coords)
+        accessibility_counts[category] = count
+
+    # Compute weighted accessibility score weighted by count * category weight
+    weighted_score = sum(
+        category_weights[cat] * count
+        for cat, count in accessibility_counts.items()
+    )
+
+    # Output counts and weighted score
+    logging.info(f"Accessibility counts by category for region {row['NAME_MAHAL']}:")
+    for cat, count in accessibility_counts.items():
+        logging.info(f" - {cat.capitalize()}: {count} places within threshold")
+
+    logging.info(f"Weighted accessibility score for region {row['NAME_MAHAL']}: {weighted_score}")
+
+    scores.append(weighted_score)
+    logging.info(f"score process done for region number {idx} out of {len(regions)}")
+
+regions["score"] = scores
+regions.to_file("results/regions_result.shp")
+logging.info("15-Minute accessibility analysis complete.")
