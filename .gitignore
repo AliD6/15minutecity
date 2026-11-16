@@ -1,0 +1,7 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+cache/
+results/
+15min_city_tehran.log
